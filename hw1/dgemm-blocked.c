@@ -1,11 +1,33 @@
 const char* dgemm_desc = "Simple blocked dgemm.";
 
+#include <immintrin.h>
+#include <stdio.h>
 #ifndef BLOCK_SIZE
-#define BLOCK_SIZE 25
+#define BLOCK_SIZE 24
 #endif
 
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 
+void micro_kernel(double* A, double* B, double* C)
+{
+    __m256d Ar;
+    __m256d Br;
+    __m256d Cr;
+    __m256d Dr;
+
+    // Load
+    Ar = _mm256_set1_pd(A[0]);
+    Br = _mm256_load_pd(B);
+    Cr = _mm256_load_pd(C);
+
+    // Compute
+    Dr = _mm256_mul_pd(Ar, Br);
+    Dr = _mm256_add_pd(Dr, Cr);
+
+    // Store
+    _mm256_store_pd(C, Dr);
+
+}
 /*
  * This auxiliary subroutine performs a smaller dgemm operation
  *  C := C + A * B
@@ -16,8 +38,11 @@ static void do_block(int lda, int M, int N, int K, double* A, double* B, double*
     {
         for (int i = 0; i < M; ++i)
         {
-            for (int j = 0; j < N; ++j)
+            for (int j = 0; j < N; j+=4)
             {
+                //printf("k: %d, i: %d, j: %d", k, i, j);
+                // A[i][k] one element, B[k][j], C[i][j]
+                //micro_kernel(A + i + k * lda, B + k + j * lda, C + i + j * lda);
                 double cij = C[i + j * lda];
                 cij += A[i + k * lda] * B[k + j * lda];
                 C[i + j * lda] = cij;
@@ -43,6 +68,7 @@ static void do_block(int lda, int M, int N, int K, double* A, double* B, double*
  * where A, B, and C are lda-by-lda matrices stored in column-major format.
  * On exit, A and B maintain their input values. */
 void square_dgemm(int lda, double* A, double* B, double* C) {
+    printf("Here");
     // For each block-row of A
     for (int i = 0; i < lda; i += BLOCK_SIZE) {
         // For each block-column of B

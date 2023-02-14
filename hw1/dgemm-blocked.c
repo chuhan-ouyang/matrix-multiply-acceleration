@@ -3,7 +3,7 @@ const char* dgemm_desc = "Simple blocked dgemm.";
 #include <immintrin.h>
 #include <stdio.h>
 #ifndef BLOCK_SIZE
-#define BLOCK_SIZE 24
+#define BLOCK_SIZE 184
 #endif
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 
@@ -13,7 +13,57 @@ void foo2(double s, double *a, double *c, int n);
 
 void foo3(double s, double *a, double *c, int n);
 
-void square_dgemm(int n, double* A, double* B, double* C) {
+static void do_block(int lda, int M, int N, int K, double* A, double* B, double* C);
+
+void square_dgemm(int lda, double* A, double* B, double* C) {
+
+    for (int j = 0; j < lda; j+= BLOCK_SIZE)
+    {
+        for (int k = 0; k < lda; k += BLOCK_SIZE)
+        {
+            for (int i = 0; i < lda; i += BLOCK_SIZE)
+            {
+                int M = min(BLOCK_SIZE, lda - i);
+                int N = min(BLOCK_SIZE, lda - j);
+                int K = min(BLOCK_SIZE, lda - k);
+                do_block(lda, M, N, K, A + i + k * lda, B + k + j * lda, C + i + j * lda);
+            }
+        }
+    }
+}
+
+static void do_block(int lda, int M, int N, int K, double* A, double* B, double* C) {
+    // allocate new memory for A of size m * k
+    // allocate new memory for B of size k * n
+    double* A2 = _mm_malloc(M * K * sizeof(double), 64);
+    double* B2 = _mm_malloc(K * N * sizeof(double), 64);
+
+    for (int j = 0; j < K; ++j)
+    {
+        for (int i = 0; i < M; ++i)
+        {
+            A2[i + j * M] = A[j * lda + i];
+        }
+    }
+
+    for (int j = 0; j < N; ++j)
+    {
+        for (int i = 0; i < K; ++i)
+        {
+            B2[i + j * K] = B[j * lda + i];
+        }
+    }
+
+    for (int j = 0; j < N; ++j)
+    {
+        for (int k = 0; k < K; ++k)
+        {
+            foo(B2[k + j * K], A2 + k * M, C + j * lda, M);
+        }
+    }
+}
+
+void square_dgemmOriginal(int n, double* A, double* B, double* C) {
     // For each row i of A
     for (int j = 0; j < n; ++j)
     {

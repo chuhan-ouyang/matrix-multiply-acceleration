@@ -15,7 +15,7 @@ void foo3(double s, double *a, double *c, int n);
 
 static void do_block(int lda, int M, int N, int K, double* A, double* B, double* C);
 
-void square_dgemm(int lda, double* A, double* B, double* C) {
+void square_dgemmBlock(int lda, double* A, double* B, double* C) {
 
     for (int j = 0; j < lda; j+= BLOCK_SIZE)
     {
@@ -63,17 +63,38 @@ static void do_block(int lda, int M, int N, int K, double* A, double* B, double*
     }
 }
 
-void square_dgemmOriginal(int n, double* A, double* B, double* C) {
+void square_dgemm(int n, double* A, double* B, double* C) {
     // For each row i of A
+    double* A2 = _mm_malloc(n * n * sizeof(double), 64);
+    double* B2 = _mm_malloc(n * n * sizeof(double), 64);
+
+    for (int j = 0; j < n; ++j)
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            A2[i + j * n] = A[j * n + i];
+        }
+    }
+
+    for (int j = 0; j < n; ++j)
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            B2[i + j * n] = B[j * n + i];
+        }
+    }
+
     for (int j = 0; j < n; ++j)
     {
         for (int k = 0; k < n; ++k)
         {
             //foo(B[k + j * n], A + k * n, C + j * n, n);
-            int largestMul = n - (n % 8);
-            int diff = n - largestMul;
-            foo3(B[k + j * n], A + k * n, C + j * n, largestMul);
-            foo(B[k + j * n], A + k * n + largestMul, C + j * n + largestMul, diff);
+            // int largestMul = n - (n % 8);
+            // int diff = n - largestMul;
+            // foo3(B[k + j * n], A + k * n, C + j * n, largestMul);
+            // foo(B[k + j * n], A + k * n + largestMul, C + j * n + largestMul, diff);
+
+            foo(B2[k + j * n], A2 + k * n, C + j * n, n);
         }
     }
 }
@@ -116,6 +137,7 @@ void foo2(double s, double *a, double *c, int n)
 
 void foo(double s, double* a, double* c, int n)
 {
+
     for (int i = 0; i < n; ++i)
     {
         c[i] = s * a[i] + c[i];

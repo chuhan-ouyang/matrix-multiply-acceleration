@@ -5,6 +5,7 @@ const char* dgemm_desc = "Simple blocked dgemm.";
 #ifndef BLOCK_SIZE
 #define BLOCK_SIZE 184
 #endif
+#include <prfchwintrin.h>
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 
 void foo(double s, double* a, double* c, int n);

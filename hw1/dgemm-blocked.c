@@ -3,7 +3,7 @@ const char* dgemm_desc = "Simple blocked dgemm.";
 #include <immintrin.h>
 #include <stdio.h>
 #ifndef BLOCK_SIZE
-#define BLOCK_SIZE 184
+#define BLOCK_SIZE 24
 #endif
 #include <prfchwintrin.h>
 #define min(a, b) (((a) < (b)) ? (a) : (b))
@@ -16,8 +16,8 @@ void foo3(double s, double *a, double *c, int n);
 
 static void do_block(int lda, int M, int N, int K, double* A, double* B, double* C);
 
-void square_dgemmBlock(int lda, double* A, double* B, double* C) {
-
+void square_dgemm_blocked(int lda, double* A, double* B, double* C) {
+    // do inner products of sequences of block and store back to results
     for (int j = 0; j < lda; j+= BLOCK_SIZE)
     {
         for (int k = 0; k < lda; k += BLOCK_SIZE)
@@ -34,8 +34,8 @@ void square_dgemmBlock(int lda, double* A, double* B, double* C) {
 }
 
 static void do_block(int lda, int M, int N, int K, double* A, double* B, double* C) {
-    // allocate new memory for A of size m * k
-    // allocate new memory for B of size k * n
+    // unpack matrix A (memory aligned)
+    // unpack matrix B (memory aligned)
     double* A2 = _mm_malloc(M * K * sizeof(double), 64);
     double* B2 = _mm_malloc(K * N * sizeof(double), 64);
 
@@ -55,17 +55,25 @@ static void do_block(int lda, int M, int N, int K, double* A, double* B, double*
         }
     }
 
+    // within the block, use inner product to compute and store the result
     for (int j = 0; j < N; ++j)
     {
         for (int k = 0; k < K; ++k)
         {
-            foo(B2[k + j * K], A2 + k * M, C + j * lda, M);
+            //foo(B2[k + j * K], A2 + k * M, C + j * lda, M);
+            int largestMul = M - (M % 8);
+            int diff = M - largestMul;
+            foo3(B[k + j * n], A + k * n, C + j * n, largestMul);
+            //foo2(B2[k + j * K], A2+ k * M, C + j * n, largestMul);
+            foo(B2[k + j * K], A2 + k * M + largestMul, C + j * n + largestMul, diff);
+
         }
     }
 }
 
 void square_dgemm(int n, double* A, double* B, double* C) {
-    // For each row i of A
+    
+    // allocate new spaces to make A and B memory aligned
     double* A2 = _mm_malloc(n * n * sizeof(double), 64);
     double* B2 = _mm_malloc(n * n * sizeof(double), 64);
 
@@ -89,21 +97,22 @@ void square_dgemm(int n, double* A, double* B, double* C) {
     {
         for (int k = 0; k < n; ++k)
         {
+            // use inner product to compute the result of the entire array
             //foo(B[k + j * n], A + k * n, C + j * n, n);
-            // int largestMul = n - (n % 8);
-            // int diff = n - largestMul;
-            // foo3(B[k + j * n], A + k * n, C + j * n, largestMul);
-            // foo(B[k + j * n], A + k * n + largestMul, C + j * n + largestMul, diff);
+            int largestMul = n - (n % 4);
+            int diff = n - largestMul;
+            //foo3(B[k + j * n], A + k * n, C + j * n, largestMul);
+            foo2(B[k + j * n], A + k * n, C + j * n, largestMul);
+            foo(B[k + j * n], A + k * n + largestMul, C + j * n + largestMul, diff);
 
-            foo(B2[k + j * n], A2 + k * n, C + j * n, n);
+            //foo(B2[k + j * n], A2 + k * n, C + j * n, n);
         }
     }
 }
 
 void foo3(double s, double *A, double *C, int n)
 {
-    // element wise multiply a and s
-    // then add result back to c
+    // size-8 microkernel for broadcasting and element wise computation
     for (int i = 0; i < n/8; i++)
     {
         // Declare
@@ -125,6 +134,7 @@ void foo3(double s, double *A, double *C, int n)
 
 void foo2(double s, double *a, double *c, int n)
 {
+    // size-4 microkernel for broadcasting and element wise computation
     __m256d sv = _mm256_set1_pd(s);
     for (int i = 0; i < n/4; i++)
     {
@@ -138,7 +148,7 @@ void foo2(double s, double *a, double *c, int n)
 
 void foo(double s, double* a, double* c, int n)
 {
-
+    // direct broadcasting and element wise computation
     for (int i = 0; i < n; ++i)
     {
         c[i] = s * a[i] + c[i];
